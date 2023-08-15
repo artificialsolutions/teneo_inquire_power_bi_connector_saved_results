@@ -1,5 +1,40 @@
-﻿// This file contains the Data Connector logic to connect to Teneo Inquire and retrieve saved results
+﻿[Version = "7.2.0-SP1"]
 section teneo_inquire_saved_results;
+
+[DataSource.Kind="teneo_inquire_saved_results", Publish="teneo_inquire_saved_results.Publish"]
+shared teneo_inquire_saved_results.Contents = (url as text, lds as text) as table =>
+    let
+       results = GetResults(url, lds),
+       tableResult = #table({"Name", "Key", "Data", "ItemKind", "ItemName", "IsLeaf"}, results),
+       tableNav = Table.ToNavigationTable(tableResult, {"Key"}, "Name", "Data", "ItemKind", "ItemName", "IsLeaf")
+    in
+       tableNav;
+
+// Data Source Kind description
+teneo_inquire_saved_results = [
+    Authentication = [
+        //Key = [],
+        UsernamePassword = []
+        // Windows = [],
+        //Implicit = []
+    ],
+    Label = Extension.LoadString("DataSourceLabel")
+];
+
+// Data Source UI publishing description
+teneo_inquire_saved_results.Publish = [
+    Beta = true,
+    Category = "Other",
+    ButtonText = { Extension.LoadString("ButtonTitle"), Extension.LoadString("ButtonHelp") },
+    LearnMoreUrl = "https://developers.teneo.ai/",
+    SourceImage = teneo_inquire_saved_results.Icons,
+    SourceTypeImage = teneo_inquire_saved_results.Icons
+];
+
+teneo_inquire_saved_results.Icons = [
+    Icon16 = { Extension.Contents("teneo_saved_results16.png"), Extension.Contents("teneo_saved_results20.png"), Extension.Contents("teneo_saved_results24.png"), Extension.Contents("teneo_saved_results32.png") },
+    Icon32 = { Extension.Contents("teneo_saved_results32.png"), Extension.Contents("teneo_saved_results40.png"), Extension.Contents("teneo_saved_results48.png"), Extension.Contents("teneo_saved_results64.png") }
+];
 
 authType = "Bearer ";
 
@@ -16,10 +51,10 @@ Table.ToNavigationTable = (
         tableType = Value.Type(table),
         newTableType = Type.AddTableKey(tableType, keyColumns, true) meta
         [
-            NavigationTable.NameColumn = nameColumn, 
+            NavigationTable.NameColumn = nameColumn,
             NavigationTable.DataColumn = dataColumn,
-            NavigationTable.ItemKindColumn = itemKindColumn, 
-            Preview.DelayColumn = itemNameColumn, 
+            NavigationTable.ItemKindColumn = itemKindColumn,
+            Preview.DelayColumn = itemNameColumn,
             NavigationTable.IsLeafColumn = isLeafColumn
         ],
         navigationTable = Value.ReplaceType(table, newTableType)
@@ -28,7 +63,7 @@ Table.ToNavigationTable = (
 
 Login = (url as text, username as text, password as text) as text =>
     let
-        json = Json.FromValue([user = username, pass = password]),
+        json = Json.FromValue([user = username, username = username, pass = password, password = password]),
         authSource = Web.Contents(url,
         [
             RelativePath = "/auth/login",
@@ -36,16 +71,17 @@ Login = (url as text, username as text, password as text) as text =>
             Content = json
         ]
         ),
-        authToken = Text.FromBinary(authSource)
+        authToken = Text.FromBinary(authSource),
+        token = if Text.StartsWith(authToken, """") then Text.BetweenDelimiters(authToken, """", """") else authToken
     in
-        authToken;
+        token;
 
 SharedQueries = (url as text, lds as text, authToken as text) as list =>
     let
-        path = Text.Combine({"/client-data/", lds}),
+        path = Text.Combine({"/saved-results/", lds}),
         source = Web.Contents(url, [
             RelativePath = path,
-            Headers = [Authorization = Text.Combine({authType, authToken}), #"Content-Type" = "application/x-www-form-urlencoded"],
+            Headers = [Authorization = Text.Combine({authType, authToken}), #"Content-Type" = "application/json"],
             Timeout = #duration(1, 0, 0, 0)
         ]),
         json = Json.Document(source)
@@ -60,11 +96,11 @@ GetIds = (ar as list) as table =>
 
 ExtractData = (url as text, lds as text, authToken as text, id as text) as list =>
     let
-        path = Text.Combine({"/client-data/", lds}),
+        path = Text.Combine({"/saved-results/export", "/", lds, "/", id}),
         source = Web.Contents(url, [
-            RelativePath = Text.Combine({path, "/export/", id}),
+            RelativePath = path,
             Query = [format = "json", timeout = "1200000"],
-            Headers = [Authorization = Text.Combine({authType, authToken}), #"Content-Type" = "application/octet-stream"],
+            Headers = [Authorization = Text.Combine({authType, authToken}), #"Accept" = "application/octet-stream"],
             IsRetry = true,
             Timeout = #duration(1, 0, 0, 0)
         ])
@@ -124,36 +160,3 @@ GetResults = (url as text, lds as text) as list =>
         results = List.Generate(()=> [index = 0, y={ids[id]{0}, ids[id]{0}, GetData(url, lds, authToken, ids[id]{0}), "Table", "Table", true}], each [index]< List.Count(ids[id]), each [index=[index] + 1, y={ids[id]{index}, ids[id]{index}, GetData(url, lds, authToken, ids[id]{index}), "Table", "Table", true}], each [y])
     in
         results;
-
-[DataSource.Kind="teneo_inquire_saved_results", Publish="teneo_inquire_saved_results.Publish"]
-shared teneo_inquire_saved_results.Contents = (url as text, lds as text) as table =>
-    let
-       results = GetResults(url, lds),
-       tableResult = #table({"Name", "Key", "Data", "ItemKind", "ItemName", "IsLeaf"}, results),
-       tableNav = Table.ToNavigationTable(tableResult, {"Key"}, "Name", "Data", "ItemKind", "ItemName", "IsLeaf")
-    in
-       tableNav;
-
-// Data Source Kind description
-teneo_inquire_saved_results = [
-    Authentication = [
-        UsernamePassword = [],
-        Implicit = []
-    ],
-    Label = Extension.LoadString("DataSourceLabel")
-];
-
-// Data Source UI publishing description
-teneo_inquire_saved_results.Publish = [
-    Beta = true,
-    Category = "Other",
-    ButtonText = { Extension.LoadString("ButtonTitle"), Extension.LoadString("ButtonHelp") },
-    LearnMoreUrl = "https://developers.artificial-solutions.com/",
-    SourceImage = teneo_inquire_saved_results.Icons,
-    SourceTypeImage = teneo_inquire_saved_results.Icons
-];
-
-teneo_inquire_saved_results.Icons = [
-    Icon16 = { Extension.Contents("teneo_inquire_saved_results16.png"), Extension.Contents("teneo_inquire_saved_results20.png"), Extension.Contents("teneo_inquire_saved_results24.png"), Extension.Contents("teneo_inquire_saved_results32.png") },
-    Icon32 = { Extension.Contents("teneo_inquire_saved_results32.png"), Extension.Contents("teneo_inquire_saved_results40.png"), Extension.Contents("teneo_inquire_saved_results48.png"), Extension.Contents("teneo_inquire_saved_results64.png") }
-];
